@@ -2,7 +2,7 @@ package swift
 
 import (
 	"github.com/stretchr/testify/assert"
-	"github.com/wal-g/storages/storage"
+	"github.com/its-johnt/storages/storage"
 	"os"
 	"testing"
 )

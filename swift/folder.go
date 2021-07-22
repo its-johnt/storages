@@ -1,7 +1,7 @@
 package swift
 
 import (
-	"github.com/wal-g/storages/storage"
+	"github.com/its-johnt/storages/storage"
 	"github.com/wal-g/tracelog"
 	"io"
 	"io/ioutil"

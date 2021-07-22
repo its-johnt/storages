@@ -25,6 +25,7 @@ const (
 	EncryptionKey   = "GCS_ENCRYPTION_KEY"
 	MaxChunkSize    = "GCS_MAX_CHUNK_SIZE"
 	MaxRetries      = "GCS_MAX_RETRIES"
+	ChunkedUploads  = "GCS_USE_CHUNKED_UPLOADS"
 
 	defaultContextTimeout = 60 * 60 // 1 hour
 	maxRetryDelay         = 5 * time.Minute
@@ -44,6 +45,7 @@ var (
 		EncryptionKey,
 		MaxChunkSize,
 		MaxRetries,
+		ChunkedUploads,
 	}
 )
 
@@ -275,11 +277,34 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 
 func (folder *Folder) PutObject(name string, content io.Reader) error {
 	tracelog.DebugLogger.Printf("Put %v into %v\n", name, folder.path)
-	object := folder.BuildObjectHandle(folder.joinPath(folder.path, name))
 
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
 
+	useChunkedUploads := true
+	if ChunkedUploads == "0" {
+		useChunkedUploads = false
+	}
+
+	if useChunkedUploads {
+		return folder.PutChunkedObject(ctx, name, content)
+	}
+	return folder.PutUnchunkedObject(ctx, name, content)
+}
+
+func (folder *Folder) PutUnchunkedObject(ctx context.Context, name string, content io.Reader) error {
+	object := folder.BuildObjectHandle(folder.joinPath(folder.path, name))
+	objectUploader := NewUploader(object, folder.uploaderOptions...)
+	if err := objectUploader.UploadObject(ctx, name, content); err != nil {
+		return NewError(err, "Unable to upload an object")
+	}
+	tracelog.DebugLogger.Printf("Put %v done\n", name)
+
+	return nil
+}
+
+func (folder *Folder) PutChunkedObject(ctx context.Context, name string, content io.Reader) error {
+	object := folder.BuildObjectHandle(folder.joinPath(folder.path, name))
 	chunkNum := 0
 	tmpChunks := make([]*gcs.ObjectHandle, 0)
 

@@ -38,6 +38,12 @@ type chunk struct {
 	size  int
 }
 
+type object struct {
+	name string
+	data []byte
+	size int
+}
+
 func NewUploader(objHandle *storage.ObjectHandle, options ...UploaderOption) *Uploader {
 	u := &Uploader{
 		objHandle:        objHandle,
@@ -58,12 +64,43 @@ func (u *Uploader) allocateBuffer() []byte {
 	return make([]byte, u.maxChunkSize)
 }
 
-// UploadChunk uploads ab object chunk to storage.
-func (u *Uploader) UploadChunk(ctx context.Context, chunk chunk) error {
-	return u.retry(ctx, u.getUploadFunc(chunk))
+func (u *Uploader) UploadObject(ctx context.Context, name string, content io.Reader) error {
+	return u.retry(ctx, u.getUploadFunc(name, content))
 }
 
-func (u *Uploader) getUploadFunc(chunk chunk) func(context.Context) error {
+func (u *Uploader) getUploadFunc(name string, content io.Reader) func(context.Context) error {
+	return func(ctx context.Context) (err error) {
+		tracelog.DebugLogger.Printf("Upload %s\n", name)
+
+		writer := u.objHandle.NewWriter(ctx)
+
+		defer func() {
+			if closeErr := writer.Close(); closeErr != nil {
+				tracelog.WarningLogger.Printf("Unable to close object writer %s, err: %v", name, closeErr)
+
+				if err == nil {
+					err = closeErr
+				}
+			}
+		}()
+
+		_, err = io.Copy(writer, content)
+		if err == nil {
+			return nil
+		}
+
+		tracelog.WarningLogger.Printf("Unable to copy object %s, err: %v", name, err)
+
+		return err
+	}
+}
+
+// UploadChunk uploads ab object chunk to storage.
+func (u *Uploader) UploadChunk(ctx context.Context, chunk chunk) error {
+	return u.retry(ctx, u.getChunkUploadFunc(chunk))
+}
+
+func (u *Uploader) getChunkUploadFunc(chunk chunk) func(context.Context) error {
 	return func(ctx context.Context) (err error) {
 		tracelog.DebugLogger.Printf("Upload %s, chunk %d\n", chunk.name, chunk.index)
 
